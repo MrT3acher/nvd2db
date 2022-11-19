@@ -1,4 +1,5 @@
 import json
+import logging
 
 import click
 import IPython
@@ -29,22 +30,39 @@ def convert(inputs):
         ctr = 0
         for cve in cves:
             ctr += 1
-            cve_id = cve['cve']['CVE_data_meta']['ID']
-            if len(cve['impact']) == 0:
-                cve_score = None
-                cve_serverity = None
-            else:
-                cve_cvss3 = cve['impact']['baseMetricV3']['cvssV3']
-                cve_score = cve_cvss3['baseScore']
-                cve_serverity = cve_cvss3['baseSeverity']
 
-            rows.append({
-                'cve_id': cve_id,
-                'base_score': cve_score,
-                'base_severity': cve_serverity
-            })
+            row = {
+                'cve_id': None,
+                'cwe': None,
+                'v2_base_score': None,
+                'v2_severity': None,
+                'v3_base_score': None,
+                'v3_base_severity': None,
+            }
+            
+            cve_id = row['cve_id'] = cve['cve']['CVE_data_meta']['ID']
+            try:
+                row['cwe'] = cve['cve']['problemtype']['problemtype_data'][0]['description'][0]['value']
+            except IndexError:
+                pass
+            
+            if len(cve['impact']) != 0:
+                try:
+                    cve_cvss3 = cve['impact']['baseMetricV3']['cvssV3']
+                    row['v3_base_score'] = cve_cvss3['baseScore']
+                    row['v3_base_severity'] = cve_cvss3['baseSeverity']
+                except KeyError:
+                    logging.info(f"{cve_id} hasn't CVSS version 3")
+
+                try:
+                    cve_cvss2 = cve['impact']['baseMetricV2']
+                    row['v2_base_score'] = cve_cvss2['cvssV2']['baseScore']
+                    row['v2_severity'] = cve_cvss2['severity']
+                except KeyError:
+                    logging.info(f"{cve_id} hasn't CVSS version 2")
+
+            rows.append(row)
 
             if ctr % 1000 == 0:
                 core.models.CVE.insert_many(tuple(rows)).execute()
                 rows = []
-        # core.models.CVE(cve_id=cve_id, base_score=cve_score, base_severity=cve_serverity).save()
